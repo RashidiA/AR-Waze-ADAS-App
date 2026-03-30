@@ -70,19 +70,23 @@ function drawARArrow(ctx, x, y) {{
 }}
 
 async function start() {{
-    model = await cocoSsd.load();
-    const stream = await navigator.mediaDevices.getUserMedia({{ 
-        video: {{ facingMode: 'environment' }} 
-    }});
-    video.srcObject = stream;
-    
-    navigator.geolocation.watchPosition(pos => {{
-        speedVal.innerText = ((pos.coords.speed || 0) * 3.6).toFixed(1);
-    }}, null, {{enableHighAccuracy: true}});
+    try {{
+        model = await cocoSsd.load();
+        const stream = await navigator.mediaDevices.getUserMedia({{ 
+            video: {{ facingMode: 'environment' }} 
+        }});
+        video.srcObject = stream;
+        
+        navigator.geolocation.watchPosition(pos => {{
+            speedVal.innerText = ((pos.coords.speed || 0) * 3.6).toFixed(1);
+        }}, null, {{enableHighAccuracy: true}});
 
-    document.getElementById('overlay').style.display = 'none';
-    speak("Navigation and safety system online.");
-    video.onloadedmetadata = () => render();
+        document.getElementById('overlay').style.display = 'none';
+        speak("Navigation and safety system online.");
+        video.onloadedmetadata = () => render();
+    }} catch (err) {{
+        console.error("Initialization failed", err);
+    }}
 }}
 
 async function render() {{
@@ -105,10 +109,10 @@ async function render() {{
     }
     ctx.putImageData(roadData, 0, roadTop);
     
-    if(leftDelt > {drift_sensitivity}) speak("Drift left");
-    if(rightDelt > {drift_sensitivity}) speak("Drift right");
+    if(leftDelt > {drift_sensitivity}) speak("Check left lane");
+    if(rightDelt > {drift_sensitivity}) speak("Check right lane");
 
-    drawARArrow(ctx, w/2, h*0.6);
+    drawARArrow(ctx, w/2, h * 0.6);
 
     if (Date.now() % 7 == 0) {{
         const predictions = await model.detect(video);

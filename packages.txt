@@ -1,0 +1,9 @@
+freeglut3-dev
+libgl1-mesa-dev
+libglu1-mesa-dev
+libjpeg-dev
+zlib1g-dev
+libpng-dev
+libglvnd-dev
+build-essential
+gcc

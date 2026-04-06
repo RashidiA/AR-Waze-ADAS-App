@@ -4,9 +4,10 @@ from streamlit_folium import st_folium
 import folium
 import requests
 
-st.set_page_config(page_title="ADAS Pro: HUD Edition", layout="wide")
+# 1. SETUP PAGE
+st.set_page_config(page_title="ADAS Pro: Rashidi HUD", layout="wide")
 
-# --- SIDEBAR: SEARCH & CONFIG ---
+# 2. SIDEBAR CONTROLS
 st.sidebar.title("🚘 HUD Control Center")
 query = st.sidebar.text_input("Set Destination", "Petronas Twin Towers")
 
@@ -36,23 +37,20 @@ st.sidebar.divider()
 threshold = st.sidebar.slider("Lane Sensitivity", 100, 255, 145)
 unit = st.sidebar.selectbox("Speed Unit", ["km/h", "mph"])
 
-# --- HYUNDAI STYLE HUD JS ---
+# 3. THE JAVASCRIPT TEMPLATE (Visuals & Logic)
 JS_CODE = r"""
-<div style="position: relative; width: 100%; max-width: 800px; margin: auto; border-radius: 25px; overflow: hidden; background: #000; font-family: 'Segoe UI', Roboto, sans-serif;">
+<div style="position: relative; width: 100%; max-width: 800px; margin: auto; border-radius: 25px; overflow: hidden; background: #000; font-family: sans-serif;">
     <video id="video" autoplay playsinline muted style="width: 100%; height: auto; display: block; filter: brightness(0.9);"></video>
     <canvas id="output" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5;"></canvas>
     
     <div id="hud-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; color: white;">
-        
         <div style="position: absolute; bottom: 40px; left: 40px; text-align: center;">
             <div id="speed" style="font-size: 72px; font-weight: 800; text-shadow: 0 0 20px rgba(0,255,255,0.8); line-height: 1;">0</div>
             <div style="font-size: 18px; letter-spacing: 2px; color: rgba(255,255,255,0.7);">__UNIT__</div>
         </div>
-
-        <div id="lane-msg" style="position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); font-size: 14px; background: rgba(0,255,255,0.2); padding: 5px 15px; border-radius: 20px; border: 1px solid rgba(0,255,255,0.5); display:none;">
+        <div id="lane-msg" style="position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); font-size: 14px; background: rgba(0,255,255,0.2); padding: 5px 15px; border-radius: 20px; border: 1px solid rgba(0,255,255,0.5); display:none; color: #00dbde;">
             LANE KEEPING ACTIVE
         </div>
-
         <div style="position: absolute; bottom: 40px; right: 40px; text-align: right; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 15px; border-right: 4px solid #00dbde;">
             <div style="font-size: 12px; color: #00dbde;">DESTINATION</div>
             <div id="dest-name" style="font-size: 18px; font-weight: bold;">__ADDR__</div>
@@ -69,7 +67,7 @@ JS_CODE = r"""
 <script>
 const video = document.getElementById('video');
 const canvas = document.getElementById('output');
-const ctx = canvas.getContext('2d', {alpha: true, desynchronized: true});
+const ctx = canvas.getContext('2d', {alpha: true});
 const speedEl = document.getElementById('speed');
 const distEl = document.getElementById('dist-val');
 
@@ -81,7 +79,7 @@ let userPos = null;
 let arrowRot = 0;
 
 async function start() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: 1280 } });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     video.srcObject = stream;
     
     navigator.geolocation.watchPosition(p => {
@@ -109,21 +107,19 @@ function render() {
     ctx.drawImage(video, 0, 0);
     const w = canvas.width, h = canvas.height;
 
-    // LANE DETECTION (Asari-Rashidi Logic)
     const scanH = Math.floor(h * 0.2);
     const scanTop = Math.floor(h * 0.75);
     const imgData = ctx.getImageData(0, scanTop, w, scanH);
     let detected = false;
     for (let i = 0; i < imgData.data.length; i += 4) {
         if (imgData.data[i] > THRESHOLD && imgData.data[i+1] > THRESHOLD && imgData.data[i+2] > THRESHOLD) {
-            imgData.data[i] = 0; imgData.data[i+1] = 219; imgData.data[i+2] = 222; // Cyan HUD Color
+            imgData.data[i] = 0; imgData.data[i+1] = 219; imgData.data[i+2] = 222;
             detected = true;
         }
     }
     ctx.putImageData(imgData, 0, scanTop);
     document.getElementById('lane-msg').style.display = detected ? 'block' : 'none';
 
-    // AR NAVIGATION ARROW
     if (T_LAT != 0) {
         ctx.save();
         ctx.translate(w/2, h*0.65);
@@ -140,3 +136,14 @@ function render() {
 }
 document.getElementById('startBtn').onclick = start;
 </script>
+"""
+
+# 4. THE INJECTION LOGIC (This glues Python and JS together)
+final_js = (JS_CODE.replace("__THRESHOLD__", str(threshold))
+                   .replace("__T_LAT__", str(lat))
+                   .replace("__T_LON__", str(lon))
+                   .replace("__ADDR__", addr)
+                   .replace("__UNIT__", unit))
+
+# 5. RENDER THE COMPONENT
+components.html(final_js, height=650)

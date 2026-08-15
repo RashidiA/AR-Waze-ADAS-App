@@ -8,7 +8,7 @@ st.sidebar.title("⚙️ HUD Settings")
 enable_adas = st.sidebar.checkbox("Activate ADAS (Lane & Object Detection)", value=True)
 unit = st.sidebar.selectbox("Speed Unit", ["km/h", "mph"])
 
-# --- FRONTEND DUAL HUD (VOICE + COMPACT UI) ---
+# --- FRONTEND DUAL HUD (VOICE + COMPACT UI + DIRECT GOOGLE NAV LAUNCHER) ---
 HUD_CODE = f"""
 <!DOCTYPE html>
 <html>
@@ -43,7 +43,6 @@ HUD_CODE = f"""
       gap: 8px;
     }}
 
-    /* Compact Search Box */
     .hud-search-box {{
       display: flex;
       align-items: center;
@@ -54,7 +53,7 @@ HUD_CODE = f"""
       border: 1.5px solid #00dbde;
       box-shadow: 0 0 15px rgba(0, 219, 222, 0.4);
       backdrop-filter: blur(8px);
-      width: 280px; /* Kept short & compact */
+      width: 320px;
     }}
     .hud-search-input {{
       background: transparent;
@@ -76,16 +75,23 @@ HUD_CODE = f"""
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
+      font-size: 13px;
       flex-shrink: 0;
     }}
-    .btn-icon:hover {{ background: #00dbde; color: #000; }}
-
-    /* Quick Preset Chips */
-    .preset-bar {{
-      display: flex;
-      gap: 6px;
+    .btn-start-nav {{
+      background: linear-gradient(135deg, #00ff88, #00dbde);
+      border: none;
+      color: #000;
+      font-weight: bold;
+      border-radius: 20px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 11px;
+      white-space: nowrap;
+      box-shadow: 0 0 10px rgba(0, 255, 136, 0.6);
     }}
+
+    .preset-bar {{ display: flex; gap: 6px; }}
     .chip {{
       background: rgba(9, 16, 29, 0.85);
       border: 1px solid rgba(0,219,222,0.5);
@@ -95,18 +101,9 @@ HUD_CODE = f"""
       font-size: 11px;
       cursor: pointer;
       font-weight: bold;
-      backdrop-filter: blur(4px);
-    }}
-    .chip:hover {{ background: #00dbde; color: #000; }}
-
-    /* Layout Grid */
-    .hud-container {{
-      display: flex;
-      flex-direction: row;
-      width: 100%;
-      height: 100%;
     }}
 
+    .hud-container {{ display: flex; flex-direction: row; width: 100%; height: 100%; }}
     .ar-view {{ position: relative; width: 65%; height: 100%; background: #000; flex-grow: 1; }}
     video {{ display: none; }}
     canvas {{ width: 100%; height: 100%; display: block; object-fit: cover; }}
@@ -158,15 +155,13 @@ HUD_CODE = f"""
 <body>
   <div class="hud-wrapper">
     
-    <!-- COMPACT CONTROL CLUSTER (SEARCH + VOICE + PRESETS) -->
     <div class="hud-controls-container">
       <div class="hud-search-box">
-        <input type="text" id="destinationInput" class="hud-search-input" placeholder="Speak or type location..." value="Taman Sekiah Makmur">
+        <input type="text" id="destinationInput" class="hud-search-input" placeholder="Type location..." value="Taman Sekiah Makmur">
         <button class="btn-icon" id="micBtn" onclick="startVoiceInput()" title="Voice Search">🎙️</button>
-        <button class="btn-icon" onclick="updateDestination()" title="Navigate">➔</button>
+        <button class="btn-start-nav" onclick="launchLiveNavigation()" title="Start Turn-By-Turn Navigation">🚀 START</button>
       </div>
 
-      <!-- Quick One-Tap Presets -->
       <div class="preset-bar">
         <div class="chip" onclick="quickNav('Taman Sekiah Makmur')">🏠 Home</div>
         <div class="chip" onclick="quickNav('Petronas')">⛽ Gas</div>
@@ -229,19 +224,27 @@ HUD_CODE = f"""
       targetLabel.innerText = `🎯 ${{query}}`;
     }}
 
+    // LAUNCH NATIVE FULL TURN-BY-TURN NAVIGATION
+    function launchLiveNavigation() {{
+      const query = destInput.value.trim();
+      if (!query) return;
+      const encoded = encodeURIComponent(query);
+      // Trigger Google Navigation mode directly using google.navigation API scheme
+      const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${{encoded}}&travelmode=driving`;
+      window.open(navUrl, '_blank');
+    }}
+
     function quickNav(place) {{
       destInput.value = place;
       updateDestination();
     }}
 
-    // VOICE RECOGNITION (WEB SPEECH API)
     function startVoiceInput() {{
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {{
         alert("Voice recognition is not supported on this browser.");
         return;
       }}
-      
       const recognition = new SpeechRecognition();
       recognition.lang = 'en-US';
       micBtn.style.background = '#ff0055';
@@ -252,11 +255,7 @@ HUD_CODE = f"""
         micBtn.style.background = 'rgba(0,219,222,0.2)';
         updateDestination();
       }};
-
-      recognition.onerror = function() {{
-        micBtn.style.background = 'rgba(0,219,222,0.2)';
-      }};
-
+      recognition.onerror = function() {{ micBtn.style.background = 'rgba(0,219,222,0.2)'; }};
       recognition.start();
     }}
 

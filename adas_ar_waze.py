@@ -1,14 +1,14 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="AR HUD + Google Navigation", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AR HUD + Voice Navigation", layout="wide", initial_sidebar_state="collapsed")
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.title("⚙️ HUD Settings")
 enable_adas = st.sidebar.checkbox("Activate ADAS (Lane & Object Detection)", value=True)
 unit = st.sidebar.selectbox("Speed Unit", ["km/h", "mph"])
 
-# --- MOBILE-READY DUAL HUD ENGINE ---
+# --- FRONTEND DUAL HUD (VOICE + COMPACT UI) ---
 HUD_CODE = f"""
 <!DOCTYPE html>
 <html>
@@ -18,9 +18,8 @@ HUD_CODE = f"""
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ background: #050b14; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow-x: hidden; }}
+    body {{ background: #050b14; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }}
     
-    /* Responsive Wrapper */
     .hud-wrapper {{
       position: relative;
       width: 100%;
@@ -33,45 +32,74 @@ HUD_CODE = f"""
       border: 2px solid rgba(0,219,222,0.4);
     }}
 
-    /* Mobile-Optimized Search Bar */
-    .hud-search-box {{
+    /* COMPACT TOP-LEFT CONTROL CLUSTER */
+    .hud-controls-container {{
       position: absolute;
-      top: 10px;
-      left: 10px;
-      right: 10px;
+      top: 12px;
+      left: 12px;
       z-index: 80;
       display: flex;
-      align-items: center;
+      flex-direction: column;
       gap: 8px;
-      background: rgba(9, 16, 29, 0.92);
-      padding: 6px 12px;
+    }}
+
+    /* Compact Search Box */
+    .hud-search-box {{
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(9, 16, 29, 0.9);
+      padding: 4px 8px 4px 12px;
       border-radius: 25px;
       border: 1.5px solid #00dbde;
-      box-shadow: 0 0 15px rgba(0, 219, 222, 0.5);
+      box-shadow: 0 0 15px rgba(0, 219, 222, 0.4);
       backdrop-filter: blur(8px);
+      width: 280px; /* Kept short & compact */
     }}
     .hud-search-input {{
       background: transparent;
       border: none;
       outline: none;
       color: #ffffff;
-      font-size: 14px;
+      font-size: 13px;
       width: 100%;
       font-weight: 500;
     }}
-    .hud-search-btn {{
-      background: linear-gradient(135deg, #00dbde, #fc00ff);
-      border: none;
+    .btn-icon {{
+      background: rgba(0,219,222,0.2);
+      border: 1px solid #00dbde;
       color: #fff;
-      font-weight: bold;
-      border-radius: 18px;
-      padding: 6px 14px;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
       cursor: pointer;
-      font-size: 11px;
-      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
     }}
+    .btn-icon:hover {{ background: #00dbde; color: #000; }}
 
-    /* Dual Display Layout (Responsive Columns) */
+    /* Quick Preset Chips */
+    .preset-bar {{
+      display: flex;
+      gap: 6px;
+    }}
+    .chip {{
+      background: rgba(9, 16, 29, 0.85);
+      border: 1px solid rgba(0,219,222,0.5);
+      color: #00ffcc;
+      padding: 4px 10px;
+      border-radius: 15px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: bold;
+      backdrop-filter: blur(4px);
+    }}
+    .chip:hover {{ background: #00dbde; color: #000; }}
+
+    /* Layout Grid */
     .hud-container {{
       display: flex;
       flex-direction: row;
@@ -79,18 +107,10 @@ HUD_CODE = f"""
       height: 100%;
     }}
 
-    @media (max-width: 600px) {{
-      .hud-container {{ flex-direction: column; }}
-      .ar-view {{ height: 55% !important; }}
-      .side-panel {{ height: 45% !important; border-left: none !important; border-top: 2px solid rgba(0,219,222,0.3); }}
-    }}
-
-    /* Left AR Camera View */
     .ar-view {{ position: relative; width: 65%; height: 100%; background: #000; flex-grow: 1; }}
     video {{ display: none; }}
     canvas {{ width: 100%; height: 100%; display: block; object-fit: cover; }}
 
-    /* Right Telemetry & Map Panel */
     .side-panel {{
       width: 35%;
       min-width: 140px;
@@ -116,20 +136,17 @@ HUD_CODE = f"""
     .speed-val {{ font-size: 36px; font-weight: bold; color: #fff; text-shadow: 0 0 10px #00dbde; }}
     .speed-unit {{ font-size: 11px; color: #00dbde; text-transform: uppercase; letter-spacing: 2px; }}
 
-    /* Warnings */
     .alert-banner {{
-      position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+      position: absolute; top: 90px; left: 50%; transform: translateX(-50%);
       padding: 6px 16px; border-radius: 15px; font-weight: bold; font-size: 12px;
       display: none; text-shadow: 0 0 8px rgba(0,0,0,0.8); z-index: 50;
-      white-space: nowrap;
     }}
     .alert-red {{ background: rgba(255, 0, 55, 0.9); color: #fff; border: 1px solid #ff4d4d; }}
 
-    /* Tap-to-Start Screen for Mobile Permissions */
     .starter {{
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(5,10,20,0.96); display: flex; flex-direction: column;
-      align-items: center; justify-content: center; z-index: 100; text-align: center; padding: 20px;
+      align-items: center; justify-content: center; z-index: 100; text-align: center;
     }}
     .btn-start {{
       padding: 12px 30px; font-size: 15px; font-weight: bold; color: white;
@@ -141,10 +158,20 @@ HUD_CODE = f"""
 <body>
   <div class="hud-wrapper">
     
-    <div class="hud-search-box">
-      <span>🔍</span>
-      <input type="text" id="destinationInput" class="hud-search-input" placeholder="Search destination..." value="Masjid At-Taqwa TTDI">
-      <button class="hud-search-btn" onclick="updateDestination()">GO</button>
+    <!-- COMPACT CONTROL CLUSTER (SEARCH + VOICE + PRESETS) -->
+    <div class="hud-controls-container">
+      <div class="hud-search-box">
+        <input type="text" id="destinationInput" class="hud-search-input" placeholder="Speak or type location..." value="Taman Sekiah Makmur">
+        <button class="btn-icon" id="micBtn" onclick="startVoiceInput()" title="Voice Search">🎙️</button>
+        <button class="btn-icon" onclick="updateDestination()" title="Navigate">➔</button>
+      </div>
+
+      <!-- Quick One-Tap Presets -->
+      <div class="preset-bar">
+        <div class="chip" onclick="quickNav('Taman Sekiah Makmur')">🏠 Home</div>
+        <div class="chip" onclick="quickNav('Petronas')">⛽ Gas</div>
+        <div class="chip" onclick="quickNav('KLCC')">📍 KLCC</div>
+      </div>
     </div>
 
     <div class="hud-container">
@@ -155,20 +182,20 @@ HUD_CODE = f"""
 
         <div id="startOverlay" class="starter">
           <h3 style="color: #00dbde; margin-bottom: 15px;">AR HUD VISION ENGINE</h3>
-          <button class="btn-start" onclick="initHUD()">TAP TO START CAMERA</button>
+          <button class="btn-start" onclick="initHUD()">START CAMERA ENGINE</button>
         </div>
       </div>
 
       <div class="side-panel">
         <div class="map-box">
-          <iframe id="gmapFrame" src="https://maps.google.com/maps?q=Masjid%20At-Taqwa%20TTDI&t=&z=15&ie=UTF8&iwloc=&output=embed" allowfullscreen></iframe>
+          <iframe id="gmapFrame" src="https://maps.google.com/maps?q=Taman%20Sekiah%20Makmur&t=&z=15&ie=UTF8&iwloc=&output=embed" allowfullscreen></iframe>
         </div>
 
         <div class="telemetry-box">
           <div class="speed-val" id="speedDisp">0</div>
           <div class="speed-unit">{unit}</div>
-          <div style="color: #00ffcc; font-size: 10px; margin-top: 4px; text-align: center; width: 100%; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" id="targetLabel">
-            🎯 Masjid At-Taqwa TTDI
+          <div style="color: #00ffcc; font-size: 10px; margin-top: 4px; text-align: center; width: 90%; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;" id="targetLabel">
+            🎯 Taman Sekiah Makmur
           </div>
         </div>
       </div>
@@ -185,6 +212,7 @@ HUD_CODE = f"""
     const gmapFrame = document.getElementById('gmapFrame');
     const targetLabel = document.getElementById('targetLabel');
     const destInput = document.getElementById('destinationInput');
+    const micBtn = document.getElementById('micBtn');
     
     const ADAS_ACTIVE = {"true" if enable_adas else "false"};
     const SPEED_UNIT = "{unit}";
@@ -201,6 +229,37 @@ HUD_CODE = f"""
       targetLabel.innerText = `🎯 ${{query}}`;
     }}
 
+    function quickNav(place) {{
+      destInput.value = place;
+      updateDestination();
+    }}
+
+    // VOICE RECOGNITION (WEB SPEECH API)
+    function startVoiceInput() {{
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {{
+        alert("Voice recognition is not supported on this browser.");
+        return;
+      }}
+      
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      micBtn.style.background = '#ff0055';
+
+      recognition.onresult = function(event) {{
+        const spokenText = event.results[0][0].transcript;
+        destInput.value = spokenText;
+        micBtn.style.background = 'rgba(0,219,222,0.2)';
+        updateDestination();
+      }};
+
+      recognition.onerror = function() {{
+        micBtn.style.background = 'rgba(0,219,222,0.2)';
+      }};
+
+      recognition.start();
+    }}
+
     destInput.addEventListener("keyup", function(event) {{
       if (event.key === "Enter") updateDestination();
     }});
@@ -211,9 +270,7 @@ HUD_CODE = f"""
 
     async function initHUD() {{
       try {{
-        const constraints = {{
-          video: {{ facingMode: {{ ideal: "environment" }}, width: {{ ideal: 640 }}, height: {{ ideal: 480 }} }}
-        }};
+        const constraints = {{ video: {{ facingMode: {{ ideal: "environment" }} }} }};
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
         await video.play();
@@ -227,7 +284,6 @@ HUD_CODE = f"""
 
         document.getElementById('startOverlay').style.display = 'none';
         
-        // Dynamically resize canvas to fit mobile screen container
         const resizeCanvas = () => {{
           canvas.width = canvas.clientWidth || 300;
           canvas.height = canvas.clientHeight || 300;
@@ -237,7 +293,7 @@ HUD_CODE = f"""
         
         renderHUD();
       }} catch(err) {{
-        alert("Camera Permission Required! Ensure your URL starts with https://");
+        alert("Camera permission required!");
       }}
     }}
 
@@ -247,7 +303,6 @@ HUD_CODE = f"""
         const w = canvas.width;
         const h = canvas.height;
 
-        // ADAS Vision Detection
         let detectedAlert = false;
         if (ADAS_ACTIVE && cocoModel && frameCounter % 5 === 0) {{
           const predictions = await cocoModel.detect(video);
@@ -270,7 +325,6 @@ HUD_CODE = f"""
 
         adasAlert.style.display = detectedAlert ? 'block' : 'none';
 
-        // 3D Curved AR Guidance Line
         ctx.save();
         ctx.strokeStyle = "rgba(0, 255, 136, 0.85)";
         ctx.lineWidth = 6;

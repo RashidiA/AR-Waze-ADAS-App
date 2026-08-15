@@ -1,43 +1,25 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import requests
+import urllib.parse
 
-st.set_page_config(page_title="Split-Screen AR HUD + Google Maps", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="AR HUD + Google Maps Engine", layout="wide", initial_sidebar_state="expanded")
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.title("🚘 HUD Control Panel")
 
-query = st.sidebar.text_input("Set Navigation Destination", "Petronas Twin Towers, Kuala Lumpur")
+# Direct Google Search Input
+query = st.sidebar.text_input("Set Navigation Destination", "Taman Sekiah Makmur")
+encoded_query = urllib.parse.quote(query)
 
-@st.cache_data
-def search_location(text):
-    if not text or len(text) < 3: return None
-    url = f"https://nominatim.openstreetmap.org/search?q={text}&format=json&limit=1"
-    headers = {'User-Agent': 'ADAS-Pro-HUD'}
-    try:
-        res = requests.get(url, headers=headers).json()
-        if res:
-            return {
-                "lat": float(res[0]['lat']), 
-                "lon": float(res[0]['lon']), 
-                "name": res[0]['display_name'].split(',')[0]
-            }
-    except: return None
-    return None
-
-location_data = search_location(query)
-if location_data:
-    lat, lon, addr = location_data['lat'], location_data['lon'], location_data['name']
-    st.sidebar.success(f"📍 Target Loaded: {addr}")
-else:
-    lat, lon, addr = 3.1579, 101.7116, "Kuala Lumpur" # Default location
+st.sidebar.success(f"📍 Google Target: {query}")
+st.sidebar.caption("⚡ Engine: **Native Google Maps Search** (Finds all local places)")
 
 st.sidebar.divider()
 st.sidebar.subheader("🛡️ ADAS AI Features")
 enable_adas = st.sidebar.checkbox("Activate ADAS (Lane & Object Detection)", value=True)
 unit = st.sidebar.selectbox("Speed Unit", ["km/h", "mph"])
 
-# --- FRONTEND DUAL HUD (AR CAMERA + GOOGLE MAP QUARTER DISPLAY) ---
+# --- FRONTEND (DUAL HUD + NATIVE GOOGLE MAPS SEARCH ENGINE) ---
 HUD_CODE = f"""
 <!DOCTYPE html>
 <html>
@@ -51,10 +33,10 @@ HUD_CODE = f"""
     /* Layout Grid */
     .hud-container {{
       display: grid;
-      grid-template-columns: 2.2fr 1fr;
+      grid-template-columns: 2.2fr 1.1fr;
       width: 100%;
       height: 560px;
-      max-width: 1100px;
+      max-width: 1150px;
       margin: auto;
       border-radius: 16px;
       overflow: hidden;
@@ -75,10 +57,10 @@ HUD_CODE = f"""
       border-left: 2px solid rgba(0,219,222,0.3);
     }}
 
-    /* Top-Right Quarter: Embedded Google Map */
+    /* Top-Right Quarter: Direct Native Google Map */
     .map-box {{
       width: 100%;
-      height: 60%;
+      height: 65%;
       border-bottom: 2px solid rgba(0,219,222,0.3);
       position: relative;
     }}
@@ -86,16 +68,16 @@ HUD_CODE = f"""
 
     /* Bottom-Right Quarter: Speedometer & Telemetry */
     .telemetry-box {{
-      height: 40%;
-      padding: 15px;
+      height: 35%;
+      padding: 10px;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
       background: radial-gradient(circle, rgba(0,219,222,0.1) 0%, rgba(9,16,29,1) 90%);
     }}
-    .speed-val {{ font-size: 48px; font-weight: bold; color: #fff; text-shadow: 0 0 10px #00dbde; }}
-    .speed-unit {{ font-size: 14px; color: #00dbde; text-transform: uppercase; letter-spacing: 2px; }}
+    .speed-val {{ font-size: 42px; font-weight: bold; color: #fff; text-shadow: 0 0 10px #00dbde; }}
+    .speed-unit {{ font-size: 13px; color: #00dbde; text-transform: uppercase; letter-spacing: 2px; }}
 
     /* Warning Banners */
     .alert-banner {{
@@ -134,26 +116,28 @@ HUD_CODE = f"""
       <div id="adasAlert" class="alert-banner alert-red">⚠️ COLLISION WARNING</div>
 
       <div id="startOverlay" class="starter">
-        <h2 style="color: #00dbde; letter-spacing: 2px; margin-bottom: 20px;">SPLIT-SCREEN AR HUD</h2>
+        <h2 style="color: #00dbde; letter-spacing: 2px; margin-bottom: 20px;">AR HUD (GOOGLE NAVIGATION ENGINE)</h2>
         <button class="btn-start" onclick="initHUD()">START HUD ENGINE</button>
       </div>
     </div>
 
-    <!-- RIGHT SIDE: GOOGLE MAPS + SPEED TELEMETRY -->
+    <!-- RIGHT SIDE: 100% NATIVE GOOGLE MAPS + TELEMETRY -->
     <div class="side-panel">
-      <!-- Google Maps Frame -->
+      <!-- Embedded Google Map using Direct Search String -->
       <div class="map-box">
         <iframe 
-          src="https://maps.google.com/maps?q={lat},{lon}&z=15&output=embed"
+          src="https://maps.google.com/maps?q={encoded_query}&t=&z=15&ie=UTF8&iwloc=&output=embed"
           allowfullscreen>
         </iframe>
       </div>
 
-      <!-- Live Speed & Distance Telemetry -->
+      <!-- Live Speed & Destination Telemetry -->
       <div class="telemetry-box">
         <div class="speed-val" id="speedDisp">0</div>
         <div class="speed-unit">{unit}</div>
-        <div style="color: #aaa; font-size: 12px; margin-top: 8px;" id="distDisp">Target: {addr}</div>
+        <div style="color: #00ffcc; font-size: 11px; margin-top: 6px; text-align: center; max-width: 90%;">
+          🎯 {query}
+        </div>
       </div>
     </div>
 
@@ -166,12 +150,9 @@ HUD_CODE = f"""
     const adasAlert = document.getElementById('adasAlert');
     const speedDisp = document.getElementById('speedDisp');
     
-    const TARGET_LAT = {lat};
-    const TARGET_LON = {lon};
     const ADAS_ACTIVE = {"true" if enable_adas else "false"};
     const SPEED_UNIT = "{unit}";
 
-    let userPos = null;
     let speed = 0;
     let cocoModel = null;
     let frameCounter = 0;
@@ -188,7 +169,6 @@ HUD_CODE = f"""
         video.srcObject = stream;
         
         navigator.geolocation.watchPosition(p => {{
-          userPos = {{ lat: p.coords.latitude, lon: p.coords.longitude }};
           speed = p.coords.speed ? (SPEED_UNIT === "km/h" ? p.coords.speed * 3.6 : p.coords.speed * 2.237) : 0;
           speedDisp.innerText = Math.round(speed);
         }}, null, {{ enableHighAccuracy: true }});

@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="AR HUD + Direct Google Search", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AR HUD + Google Map Direction", layout="wide", initial_sidebar_state="collapsed")
 
 # --- SIDEBAR (Optional Collapsed Controls) ---
 st.sidebar.title("⚙️ System Settings")

@@ -4,12 +4,11 @@ from streamlit_folium import st_folium
 import folium
 import requests
 
-# 1. SETUP PAGE
-st.set_page_config(page_title="ADAS Pro: Rashidi HUD", layout="wide")
+st.set_page_config(page_title="ADAS Pro AR HUD", layout="wide", initial_sidebar_state="expanded")
 
-# 2. SIDEBAR CONTROLS
-st.sidebar.title("🚘 HUD Control Center")
-query = st.sidebar.text_input("Set Destination", "Petronas Twin Towers")
+# --- SIDEBAR CONTROLS ---
+st.sidebar.title("🚘 HUD & ADAS Control Center")
+query = st.sidebar.text_input("Set Navigation Destination", "Petronas Twin Towers")
 
 @st.cache_data
 def search_location(text):
@@ -29,121 +28,243 @@ if location_data:
     st.sidebar.success(f"📍 Target: {addr}")
     m = folium.Map(location=[lat, lon], zoom_start=15)
     folium.Marker([lat, lon]).add_to(m)
-    st_folium(m, height=200, width=300, key="hud_map")
+    st_folium(m, height=180, width=280, key="hud_map")
 else:
-    lat, lon, addr = 0, 0, "No Destination"
+    lat, lon, addr = 0.0, 0.0, "No Destination"
 
 st.sidebar.divider()
-threshold = st.sidebar.slider("Lane Sensitivity", 100, 255, 145)
+st.sidebar.subheader("🛡️ ADAS Features")
+enable_adas = st.sidebar.checkbox("Activate Full ADAS Vision", value=True)
+lane_sens = st.sidebar.slider("Lane Sensitivity Threshold", 100, 255, 160)
 unit = st.sidebar.selectbox("Speed Unit", ["km/h", "mph"])
 
-# 3. THE JAVASCRIPT TEMPLATE (Visuals & Logic)
-JS_CODE = r"""
-<div style="position: relative; width: 100%; max-width: 800px; margin: auto; border-radius: 25px; overflow: hidden; background: #000; font-family: sans-serif;">
-    <video id="video" autoplay playsinline muted style="width: 100%; height: auto; display: block; filter: brightness(0.9);"></video>
-    <canvas id="output" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5;"></canvas>
+# --- FRONTEND (EDGE COMPUTING HUD & ADAS) ---
+HUD_CODE = f"""
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <style>
+    body {{ margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
+    .hud-wrapper {{ position: relative; width: 100%; max-width: 960px; height: 540px; margin: auto; border-radius: 16px; overflow: hidden; background: #000; }}
+    video {{ display: none; }}
+    canvas {{ width: 100%; height: 100%; display: block; }}
     
-    <div id="hud-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; color: white;">
-        <div style="position: absolute; bottom: 40px; left: 40px; text-align: center;">
-            <div id="speed" style="font-size: 72px; font-weight: 800; text-shadow: 0 0 20px rgba(0,255,255,0.8); line-height: 1;">0</div>
-            <div style="font-size: 18px; letter-spacing: 2px; color: rgba(255,255,255,0.7);">__UNIT__</div>
-        </div>
-        <div id="lane-msg" style="position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); font-size: 14px; background: rgba(0,255,255,0.2); padding: 5px 15px; border-radius: 20px; border: 1px solid rgba(0,255,255,0.5); display:none; color: #00dbde;">
-            LANE KEEPING ACTIVE
-        </div>
-        <div style="position: absolute; bottom: 40px; right: 40px; text-align: right; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 15px; border-right: 4px solid #00dbde;">
-            <div style="font-size: 12px; color: #00dbde;">DESTINATION</div>
-            <div id="dest-name" style="font-size: 18px; font-weight: bold;">__ADDR__</div>
-            <div id="dist-val" style="font-size: 24px; font-weight: bold; margin-top: 5px;">-- <span style="font-size: 14px;">km</span></div>
-        </div>
+    /* Overlay HUD Graphics */
+    .hud-ui {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }}
+    
+    /* ADAS Popup Alerts */
+    .alert-banner {{
+      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+      padding: 12px 28px; border-radius: 30px; font-weight: bold; font-size: 18px;
+      letter-spacing: 1px; display: none; text-shadow: 0 0 10px rgba(0,0,0,0.8);
+      animation: pulse 0.8s infinite alternate; z-index: 50;
+    }}
+    .alert-red {{ background: rgba(255, 0, 55, 0.85); color: #fff; border: 2px solid #ff4d4d; box-shadow: 0 0 20px #ff0037; }}
+    .alert-yellow {{ background: rgba(255, 170, 0, 0.85); color: #000; border: 2px solid #ffcc00; box-shadow: 0 0 20px #ffaa00; }}
+    .alert-blue {{ background: rgba(0, 219, 222, 0.85); color: #000; border: 2px solid #00ffff; box-shadow: 0 0 20px #00dbde; }}
+    
+    @keyframes pulse {{
+      0% {{ transform: translateX(-50%) scale(1); }}
+      100% {{ transform: translateX(-50%) scale(1.05); }}
+    }}
+
+    /* Start Button Overlay */
+    .starter {{
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(5,10,20,0.92); display: flex; flex-direction: column;
+      align-items: center; justify-content: center; z-index: 100;
+    }}
+    .btn-start {{
+      padding: 16px 42px; font-size: 18px; font-weight: bold; color: white;
+      background: linear-gradient(135deg, #00dbde, #fc00ff); border: none;
+      border-radius: 50px; cursor: pointer; box-shadow: 0 0 25px rgba(0,219,222,0.5);
+    }}
+  </style>
+</head>
+<body>
+  <div class="hud-wrapper">
+    <video id="cam" autoplay playsinline muted></video>
+    <canvas id="hudCanvas"></canvas>
+    
+    <div class="hud-ui">
+      <div id="adasAlert" class="alert-banner alert-red">⚠️ COLLISION WARNING</div>
     </div>
 
-    <div id="overlay" style="position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(10,20,30,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100;">
-        <h2 style="color: #00dbde; letter-spacing: 5px;">ADAS PRO HUD</h2>
-        <button id="startBtn" style="margin-top: 20px; padding: 15px 40px; border-radius: 10px; background: linear-gradient(45deg, #00dbde, #fc00ff); color: white; border: none; cursor: pointer; font-weight: bold;">INITIALIZE SYSTEM</button>
+    <div id="startOverlay" class="starter">
+      <h1 style="color: #00dbde; font-size: 28px; letter-spacing: 3px; margin-bottom: 20px;">AR HUD & ADAS VISION</h1>
+      <button class="btn-start" onclick="initHUD()">START HUD DISPLAY</button>
     </div>
-</div>
+  </div>
 
-<script>
-const video = document.getElementById('video');
-const canvas = document.getElementById('output');
-const ctx = canvas.getContext('2d', {alpha: true});
-const speedEl = document.getElementById('speed');
-const distEl = document.getElementById('dist-val');
-
-const THRESHOLD = __THRESHOLD__;
-const T_LAT = __T_LAT__;
-const T_LON = __T_LON__;
-
-let userPos = null;
-let arrowRot = 0;
-
-async function start() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    video.srcObject = stream;
+  <script>
+    const video = document.getElementById('cam');
+    const canvas = document.getElementById('hudCanvas');
+    const ctx = canvas.getContext('2d', {{ desynchronized: true }});
+    const adasAlert = document.getElementById('adasAlert');
     
-    navigator.geolocation.watchPosition(p => {
-        userPos = { lat: p.coords.latitude, lon: p.coords.longitude };
-        let s = p.coords.speed || 0;
-        speedEl.innerText = "__UNIT__" === "km/h" ? Math.round(s * 3.6) : Math.round(s * 2.237);
+    const TARGET_LAT = {lat};
+    const TARGET_LON = {lon};
+    const ADAS_ACTIVE = {"true" if enable_adas else "false"};
+    const LANE_THRESH = {lane_sens};
+    const SPEED_UNIT = "{unit}";
+
+    let userPos = null;
+    let speed = 0;
+    let distKm = 0.0;
+    let turnAngle = 0;
+    let cocoModel = null;
+    let frameCounter = 0;
+
+    // Load AI Model on startup
+    if (ADAS_ACTIVE) {{
+      cocoSsd.load().then(m => {{ cocoModel = m; console.log("ADAS Engine Ready"); }});
+    }}
+
+    async function initHUD() {{
+      try {{
+        const stream = await navigator.mediaDevices.getUserMedia({{
+          video: {{ facingMode: 'environment', width: {{ ideal: 1280 }}, height: {{ ideal: 720 }} }}
+        }});
+        video.srcObject = stream;
         
-        if (T_LAT != 0) {
-            const dLon = (T_LON - userPos.lon) * Math.PI / 180;
-            const y = Math.sin(dLon) * Math.cos(T_LAT * Math.PI / 180);
-            const x = Math.cos(userPos.lat * Math.PI / 180) * Math.sin(T_LAT * Math.PI / 180) -
-                      Math.sin(userPos.lat * Math.PI / 180) * Math.cos(T_LAT * Math.PI / 180) * Math.cos(dLon);
-            arrowRot = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-            
-            const dist = Math.sqrt(Math.pow(T_LAT-userPos.lat, 2) + Math.pow(T_LON-userPos.lon, 2)) * 111;
-            distEl.innerHTML = `${dist.toFixed(1)} <span style="font-size: 14px;">km</span>`;
-        }
-    }, null, {enableHighAccuracy: true});
+        navigator.geolocation.watchPosition(p => {{
+          userPos = {{ lat: p.coords.latitude, lon: p.coords.longitude }};
+          speed = p.coords.speed ? (SPEED_UNIT === "km/h" ? p.coords.speed * 3.6 : p.coords.speed * 2.237) : 0;
+          
+          if (TARGET_LAT !== 0) {{
+            const dLon = (TARGET_LON - userPos.lon) * Math.PI / 180;
+            const y = Math.sin(dLon) * Math.cos(TARGET_LAT * Math.PI / 180);
+            const x = Math.cos(userPos.lat * Math.PI / 180) * Math.sin(TARGET_LAT * Math.PI / 180) -
+                      Math.sin(userPos.lat * Math.PI / 180) * Math.cos(TARGET_LAT * Math.PI / 180) * Math.cos(dLon);
+            turnAngle = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+            distKm = Math.sqrt(Math.pow(TARGET_LAT-userPos.lat, 2) + Math.pow(TARGET_LON-userPos.lon, 2)) * 111;
+          }}
+        }}, null, {{ enableHighAccuracy: true }});
 
-    document.getElementById('overlay').style.display = 'none';
-    video.onloadedmetadata = () => { canvas.width = video.videoWidth; canvas.height = video.videoHeight; render(); };
-}
+        document.getElementById('startOverlay').style.display = 'none';
+        video.onloadedmetadata = () => {{
+          canvas.width = video.videoWidth || 800;
+          canvas.height = video.videoHeight || 450;
+          renderHUD();
+        }};
+      }} catch(err) {{
+        alert("Camera permission required for HUD!");
+      }}
+    }}
 
-function render() {
-    ctx.drawImage(video, 0, 0);
-    const w = canvas.width, h = canvas.height;
+    async function renderHUD() {{
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const w = canvas.width;
+      const h = canvas.height;
 
-    const scanH = Math.floor(h * 0.2);
-    const scanTop = Math.floor(h * 0.75);
-    const imgData = ctx.getImageData(0, scanTop, w, scanH);
-    let detected = false;
-    for (let i = 0; i < imgData.data.length; i += 4) {
-        if (imgData.data[i] > THRESHOLD && imgData.data[i+1] > THRESHOLD && imgData.data[i+2] > THRESHOLD) {
-            imgData.data[i] = 0; imgData.data[i+1] = 219; imgData.data[i+2] = 222;
-            detected = true;
-        }
-    }
-    ctx.putImageData(imgData, 0, scanTop);
-    document.getElementById('lane-msg').style.display = detected ? 'block' : 'none';
+      // --- 1. WHITE LANE DETECTION ---
+      let laneDetected = false;
+      let scanTop = Math.floor(h * 0.7);
+      let scanH = Math.floor(h * 0.25);
+      let imgData = ctx.getImageData(0, scanTop, w, scanH);
+      let data = imgData.data;
 
-    if (T_LAT != 0) {
+      for (let i = 0; i < data.length; i += 16) {{
+        if (data[i] > LANE_THRESH && data[i+1] > LANE_THRESH && data[i+2] > LANE_THRESH) {{
+          data[i] = 0; data[i+1] = 219; data[i+2] = 222; // Greenish-Cyan highlight
+          laneDetected = true;
+        }}
+      }}
+      ctx.putImageData(imgData, 0, scanTop);
+
+      // --- 2. ADAS AI DETECTION (VEHICLES, TRAFFIC LIGHTS, ROAD SIGNS) ---
+      let detectedAlert = "";
+      let alertLevel = "";
+
+      if (ADAS_ACTIVE && cocoModel && frameCounter % 4 === 0) {{
+        const predictions = await cocoModel.detect(video);
+        predictions.forEach(pred => {{
+          let [bx, by, bw, bh] = pred.bbox;
+          let cls = pred.class;
+
+          // Vehicles & Proximity
+          if (['car', 'truck', 'bus', 'motorbike'].includes(cls)) {{
+            let isClose = bw > (w * 0.4);
+            ctx.strokeStyle = isClose ? '#ff0037' : '#00ffcc';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(bx, by, bw, bh);
+
+            if (isClose) {{
+              detectedAlert = "⚠️ BRAKE! VEHICLE CLOSE";
+              alertLevel = "alert-red";
+            }}
+          }}
+
+          // Traffic Lights
+          if (cls === 'traffic light') {{
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(bx, by, bw, bh);
+            detectedAlert = "🚦 TRAFFIC LIGHT AHEAD";
+            alertLevel = "alert-yellow";
+          }}
+
+          // Stop Sign / Road Signs
+          if (cls === 'stop sign') {{
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(bx, by, bw, bh);
+            detectedAlert = "🛑 STOP SIGN DETECTED";
+            alertLevel = "alert-red";
+          }}
+        }});
+      }}
+      frameCounter++;
+
+      // Trigger Alert Banner
+      if (detectedAlert) {{
+        adasAlert.innerText = detectedAlert;
+        adasAlert.className = `alert-banner ${{alertLevel}}`;
+        adasAlert.style.display = 'block';
+      }} else if (!laneDetected && ADAS_ACTIVE) {{
+        adasAlert.innerText = "⚠️ LANE DEPARTURE WARNING";
+        adasAlert.className = 'alert-banner alert-yellow';
+        adasAlert.style.display = 'block';
+      }} else {{
+        adasAlert.style.display = 'none';
+      }}
+
+      // --- 3. HUD GRAPHICS OVERLAY (Matched to Reference Sygic UI) ---
+      // Speed Indicator
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 56px sans-serif";
+      ctx.fillText(Math.round(speed), w * 0.78, h * 0.35);
+      ctx.setFont = "16px sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.fillText(SPEED_UNIT, w * 0.78 + 75, h * 0.35);
+
+      // AR Curved Turn Guidance Path
+      if (TARGET_LAT !== 0) {{
         ctx.save();
-        ctx.translate(w/2, h*0.65);
-        ctx.rotate(arrowRot * Math.PI / 180);
+        ctx.strokeStyle = "rgba(0, 255, 136, 0.85)";
+        ctx.lineWidth = 12;
+        ctx.shadowColor = "#00ff88";
+        ctx.shadowBlur = 15;
+        
         ctx.beginPath();
-        ctx.moveTo(0, -30); ctx.lineTo(-25, 25); ctx.lineTo(0, 15); ctx.lineTo(25, 25);
-        ctx.closePath();
-        ctx.fillStyle = "rgba(0, 219, 222, 0.7)";
-        ctx.strokeStyle = "white"; ctx.lineWidth = 3;
-        ctx.stroke(); ctx.fill();
+        ctx.moveTo(w * 0.45, h * 0.85);
+        ctx.quadraticCurveTo(w * 0.45, h * 0.55, w * 0.4 + (turnAngle > 180 ? -60 : 60), h * 0.45);
+        ctx.stroke();
+
+        // Target distance text
+        ctx.fillStyle = "#00ff88";
+        ctx.font = "bold 24px sans-serif";
+        ctx.fillText(`${{distKm.toFixed(1)}} km`, w * 0.4, h * 0.9);
         ctx.restore();
-    }
-    requestAnimationFrame(render);
-}
-document.getElementById('startBtn').onclick = start;
-</script>
+      }}
+
+      requestAnimationFrame(renderHUD);
+    }}
+  </script>
+</body>
+</html>
 """
 
-# 4. THE INJECTION LOGIC (This glues Python and JS together)
-final_js = (JS_CODE.replace("__THRESHOLD__", str(threshold))
-                   .replace("__T_LAT__", str(lat))
-                   .replace("__T_LON__", str(lon))
-                   .replace("__ADDR__", addr)
-                   .replace("__UNIT__", unit))
-
-# 5. RENDER THE COMPONENT
-components.html(final_js, height=650)
+components.html(HUD_CODE, height=560)

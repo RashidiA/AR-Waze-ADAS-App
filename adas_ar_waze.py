@@ -1,14 +1,14 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="AR HUD + Google Map Direction", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AR HUD + Google Navigation", layout="wide", initial_sidebar_state="collapsed")
 
-# --- SIDEBAR (Optional Collapsed Controls) ---
-st.sidebar.title("⚙️ System Settings")
+# --- SIDEBAR (Settings Panel) ---
+st.sidebar.title("⚙️ HUD Settings")
 enable_adas = st.sidebar.checkbox("Activate ADAS (Lane & Object Detection)", value=True)
 unit = st.sidebar.selectbox("Speed Unit", ["km/h", "mph"])
 
-# --- FRONTEND DUAL HUD + DIRECT HUD SEARCH BAR ---
+# --- FRONTEND DUAL HUD (HIGH-VISIBILITY IN-HUD SEARCH + AR CAMERA + GOOGLE MAP) ---
 HUD_CODE = f"""
 <!DOCTYPE html>
 <html>
@@ -17,7 +17,7 @@ HUD_CODE = f"""
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: #050b14; overflow: hidden; font-family: 'Segoe UI', sans-serif; }}
+    body {{ margin: 0; background: #050b14; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
     
     /* Layout Container */
     .hud-wrapper {{
@@ -29,32 +29,37 @@ HUD_CODE = f"""
       border-radius: 16px;
       overflow: hidden;
       background: #000;
-      border: 2px solid rgba(0,219,222,0.3);
+      border: 2px solid rgba(0,219,222,0.4);
+      box-shadow: 0 0 25px rgba(0, 219, 222, 0.2);
     }}
 
-    /* Top Floating Search Bar (In-HUD Destination Switcher) */
+    /* HIGH-VISIBILITY FLOATING SEARCH BAR OVER HUD */
     .hud-search-box {{
       position: absolute;
       top: 15px;
       left: 15px;
-      z-index: 60;
+      z-index: 80;
       display: flex;
+      align-items: center;
       gap: 10px;
-      background: rgba(9, 16, 29, 0.85);
+      background: rgba(9, 16, 29, 0.9);
       padding: 8px 16px;
       border-radius: 30px;
-      border: 1px solid rgba(0, 219, 222, 0.6);
-      box-shadow: 0 0 15px rgba(0, 219, 222, 0.3);
-      backdrop-filter: blur(8px);
+      border: 2px solid #00dbde;
+      box-shadow: 0 0 20px rgba(0, 219, 222, 0.6);
+      backdrop-filter: blur(10px);
     }}
     .hud-search-input {{
       background: transparent;
       border: none;
       outline: none;
-      color: #fff;
-      font-size: 14px;
-      width: 240px;
-      font-weight: 500;
+      color: #ffffff;
+      font-size: 15px;
+      width: 260px;
+      font-weight: 600;
+    }}
+    .hud-search-input::placeholder {{
+      color: rgba(255, 255, 255, 0.6);
     }}
     .hud-search-btn {{
       background: linear-gradient(135deg, #00dbde, #fc00ff);
@@ -62,9 +67,15 @@ HUD_CODE = f"""
       color: #fff;
       font-weight: bold;
       border-radius: 20px;
-      padding: 6px 16px;
+      padding: 8px 18px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
+      letter-spacing: 1px;
+      box-shadow: 0 0 10px rgba(252, 0, 255, 0.5);
+      transition: transform 0.2s ease;
+    }}
+    .hud-search-btn:hover {{
+      transform: scale(1.05);
     }}
 
     /* Layout Grid */
@@ -107,17 +118,22 @@ HUD_CODE = f"""
       align-items: center;
       background: radial-gradient(circle, rgba(0,219,222,0.1) 0%, rgba(9,16,29,1) 90%);
     }}
-    .speed-val {{ font-size: 42px; font-weight: bold; color: #fff; text-shadow: 0 0 10px #00dbde; }}
+    .speed-val {{ font-size: 44px; font-weight: bold; color: #fff; text-shadow: 0 0 12px #00dbde; }}
     .speed-unit {{ font-size: 13px; color: #00dbde; text-transform: uppercase; letter-spacing: 2px; }}
 
-    /* Alerts */
+    /* Collision & ADAS Alerts */
     .alert-banner {{
-      position: absolute; top: 65px; left: 50%; transform: translateX(-50%);
-      padding: 10px 20px; border-radius: 20px; font-weight: bold; font-size: 14px;
+      position: absolute; top: 75px; left: 50%; transform: translateX(-50%);
+      padding: 10px 22px; border-radius: 20px; font-weight: bold; font-size: 14px;
       display: none; text-shadow: 0 0 10px rgba(0,0,0,0.8); z-index: 50;
       animation: pulse 0.8s infinite alternate;
     }}
-    .alert-red {{ background: rgba(255, 0, 55, 0.85); color: #fff; border: 1px solid #ff4d4d; }}
+    .alert-red {{ background: rgba(255, 0, 55, 0.85); color: #fff; border: 1px solid #ff4d4d; box-shadow: 0 0 15px #ff0037; }}
+
+    @keyframes pulse {{
+      0% {{ transform: translateX(-50%) scale(1); }}
+      100% {{ transform: translateX(-50%) scale(1.05); }}
+    }}
 
     .starter {{
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -125,18 +141,19 @@ HUD_CODE = f"""
       align-items: center; justify-content: center; z-index: 100;
     }}
     .btn-start {{
-      padding: 14px 36px; font-size: 16px; font-weight: bold; color: white;
+      padding: 14px 38px; font-size: 16px; font-weight: bold; color: white;
       background: linear-gradient(135deg, #00dbde, #fc00ff); border: none;
-      border-radius: 50px; cursor: pointer; box-shadow: 0 0 20px rgba(0,219,222,0.5);
+      border-radius: 50px; cursor: pointer; box-shadow: 0 0 25px rgba(0,219,222,0.5);
     }}
   </style>
 </head>
 <body>
   <div class="hud-wrapper">
     
-    <!-- IN-HUD DIRECT DESTINATION SEARCH BAR -->
+    <!-- HIGH-VISIBILITY FLOATING SEARCH BAR -->
     <div class="hud-search-box">
-      <input type="text" id="destinationInput" class="hud-search-input" placeholder="🔍 Search place in Google Maps..." value="Masjid At-Taqwa TTDI">
+      <span style="font-size: 16px;">🔍</span>
+      <input type="text" id="destinationInput" class="hud-search-input" placeholder="Type destination (e.g. KLCC)..." value="Masjid At-Taqwa TTDI">
       <button class="hud-search-btn" onclick="updateDestination()">NAVIGATE</button>
     </div>
 
@@ -162,7 +179,7 @@ HUD_CODE = f"""
         <div class="telemetry-box">
           <div class="speed-val" id="speedDisp">0</div>
           <div class="speed-unit">{unit}</div>
-          <div style="color: #00ffcc; font-size: 11px; margin-top: 6px; text-align: center; max-width: 90%;" id="targetLabel">
+          <div style="color: #00ffcc; font-size: 11px; margin-top: 6px; text-align: center; max-width: 90%; font-weight: bold;" id="targetLabel">
             🎯 Masjid At-Taqwa TTDI
           </div>
         </div>
@@ -188,7 +205,7 @@ HUD_CODE = f"""
     let cocoModel = null;
     let frameCounter = 0;
 
-    // DIRECT IN-HUD SEARCH UPDATE
+    // DIRECT HUD GOOGLE MAP SEARCH UPDATE
     function updateDestination() {{
       const query = destInput.value.trim();
       if (!query) return;
@@ -198,7 +215,7 @@ HUD_CODE = f"""
       targetLabel.innerText = `🎯 ${{query}}`;
     }}
 
-    // Allow hitting "Enter" inside search bar
+    // Trigger search when pressing Enter
     destInput.addEventListener("keyup", function(event) {{
       if (event.key === "Enter") updateDestination();
     }});
@@ -235,7 +252,7 @@ HUD_CODE = f"""
       const w = canvas.width;
       const h = canvas.height;
 
-      // ADAS Object Detection
+      // ADAS Object Detection Engine
       let detectedAlert = "";
       if (ADAS_ACTIVE && cocoModel && frameCounter % 4 === 0) {{
         const predictions = await cocoModel.detect(video);
@@ -259,7 +276,7 @@ HUD_CODE = f"""
         adasAlert.style.display = 'none';
       }}
 
-      // AR Guidance Curved Path Overlay
+      // Curved 3D AR Lane Overlay
       ctx.save();
       ctx.strokeStyle = "rgba(0, 255, 136, 0.85)";
       ctx.lineWidth = 10;

@@ -1,14 +1,14 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="AR HUD + Voice Navigation", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="AR HUD + Navigation", layout="wide", initial_sidebar_state="collapsed")
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.title("⚙️ HUD Settings")
-enable_adas = st.sidebar.checkbox("Activate ADAS (Lane & Object Detection)", value=True)
+enable_adas = st.sidebar.checkbox("Activate ADAS Object Detection", value=True)
 unit = st.sidebar.selectbox("Speed Unit", ["km/h", "mph"])
 
-# --- FRONTEND DUAL HUD (VOICE + COMPACT UI + DIRECT GOOGLE NAV LAUNCHER) ---
+# --- HIGH-PERFORMANCE AR HUD + DYNAMIC WHITE LANE DETECTOR ---
 HUD_CODE = f"""
 <!DOCTYPE html>
 <html>
@@ -32,28 +32,27 @@ HUD_CODE = f"""
       border: 2px solid rgba(0,219,222,0.4);
     }}
 
-    /* COMPACT TOP-LEFT CONTROL CLUSTER */
     .hud-controls-container {{
       position: absolute;
-      top: 12px;
-      left: 12px;
+      top: 10px;
+      left: 10px;
       z-index: 80;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }}
 
     .hud-search-box {{
       display: flex;
       align-items: center;
       gap: 6px;
-      background: rgba(9, 16, 29, 0.9);
-      padding: 4px 8px 4px 12px;
+      background: rgba(9, 16, 29, 0.92);
+      padding: 4px 8px 4px 10px;
       border-radius: 25px;
       border: 1.5px solid #00dbde;
-      box-shadow: 0 0 15px rgba(0, 219, 222, 0.4);
+      box-shadow: 0 0 12px rgba(0, 219, 222, 0.4);
       backdrop-filter: blur(8px);
-      width: 320px;
+      width: 310px;
     }}
     .hud-search-input {{
       background: transparent;
@@ -69,26 +68,25 @@ HUD_CODE = f"""
       border: 1px solid #00dbde;
       color: #fff;
       border-radius: 50%;
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
+      font-size: 12px;
       flex-shrink: 0;
     }}
     .btn-start-nav {{
-      background: linear-gradient(135deg, #00ff88, #00dbde);
+      background: linear-gradient(135deg, #00d2ff, #0072ff);
       border: none;
-      color: #000;
+      color: #fff;
       font-weight: bold;
-      border-radius: 20px;
-      padding: 6px 12px;
+      border-radius: 18px;
+      padding: 5px 12px;
       cursor: pointer;
       font-size: 11px;
       white-space: nowrap;
-      box-shadow: 0 0 10px rgba(0, 255, 136, 0.6);
     }}
 
     .preset-bar {{ display: flex; gap: 6px; }}
@@ -96,9 +94,9 @@ HUD_CODE = f"""
       background: rgba(9, 16, 29, 0.85);
       border: 1px solid rgba(0,219,222,0.5);
       color: #00ffcc;
-      padding: 4px 10px;
-      border-radius: 15px;
-      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 10px;
       cursor: pointer;
       font-weight: bold;
     }}
@@ -134,9 +132,9 @@ HUD_CODE = f"""
     .speed-unit {{ font-size: 11px; color: #00dbde; text-transform: uppercase; letter-spacing: 2px; }}
 
     .alert-banner {{
-      position: absolute; top: 90px; left: 50%; transform: translateX(-50%);
-      padding: 6px 16px; border-radius: 15px; font-weight: bold; font-size: 12px;
-      display: none; text-shadow: 0 0 8px rgba(0,0,0,0.8); z-index: 50;
+      position: absolute; top: 85px; left: 50%; transform: translateX(-50%);
+      padding: 5px 14px; border-radius: 12px; font-weight: bold; font-size: 11px;
+      display: none; z-index: 50; white-space: nowrap;
     }}
     .alert-red {{ background: rgba(255, 0, 55, 0.9); color: #fff; border: 1px solid #ff4d4d; }}
 
@@ -147,8 +145,8 @@ HUD_CODE = f"""
     }}
     .btn-start {{
       padding: 12px 30px; font-size: 15px; font-weight: bold; color: white;
-      background: linear-gradient(135deg, #00dbde, #fc00ff); border: none;
-      border-radius: 50px; cursor: pointer; box-shadow: 0 0 20px rgba(0,219,222,0.6);
+      background: linear-gradient(135deg, #00d2ff, #0072ff); border: none;
+      border-radius: 50px; cursor: pointer; box-shadow: 0 0 20px rgba(0,210,255,0.6);
     }}
   </style>
 </head>
@@ -159,7 +157,7 @@ HUD_CODE = f"""
       <div class="hud-search-box">
         <input type="text" id="destinationInput" class="hud-search-input" placeholder="Type location..." value="Taman Sekiah Makmur">
         <button class="btn-icon" id="micBtn" onclick="startVoiceInput()" title="Voice Search">🎙️</button>
-        <button class="btn-start-nav" onclick="launchLiveNavigation()" title="Start Turn-By-Turn Navigation">🚀 START</button>
+        <button class="btn-start-nav" onclick="startInAppRoute()" title="Load Route in App">START</button>
       </div>
 
       <div class="preset-bar">
@@ -176,7 +174,7 @@ HUD_CODE = f"""
         <div id="adasAlert" class="alert-banner alert-red">⚠️ BRAKE! VEHICLE CLOSE</div>
 
         <div id="startOverlay" class="starter">
-          <h3 style="color: #00dbde; margin-bottom: 15px;">AR HUD VISION ENGINE</h3>
+          <h3 style="color: #00d2ff; margin-bottom: 15px;">AR HUD VISION ENGINE</h3>
           <button class="btn-start" onclick="initHUD()">START CAMERA ENGINE</button>
         </div>
       </div>
@@ -215,62 +213,50 @@ HUD_CODE = f"""
     let speed = 0;
     let cocoModel = null;
     let frameCounter = 0;
+    let isDetecting = false;
 
-    function updateDestination() {{
+    function startInAppRoute() {{
       const query = destInput.value.trim();
       if (!query) return;
       const encoded = encodeURIComponent(query);
-      gmapFrame.src = `https://maps.google.com/maps?q=${{encoded}}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
+      gmapFrame.src = `https://maps.google.com/maps?q=directions+to+${{encoded}}&t=&z=14&ie=UTF8&iwloc=&output=embed`;
       targetLabel.innerText = `🎯 ${{query}}`;
-    }}
-
-    // LAUNCH NATIVE FULL TURN-BY-TURN NAVIGATION
-    function launchLiveNavigation() {{
-      const query = destInput.value.trim();
-      if (!query) return;
-      const encoded = encodeURIComponent(query);
-      // Trigger Google Navigation mode directly using google.navigation API scheme
-      const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${{encoded}}&travelmode=driving`;
-      window.open(navUrl, '_blank');
     }}
 
     function quickNav(place) {{
       destInput.value = place;
-      updateDestination();
+      startInAppRoute();
     }}
 
     function startVoiceInput() {{
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {{
-        alert("Voice recognition is not supported on this browser.");
-        return;
-      }}
+      if (!SpeechRecognition) return alert("Voice search not supported.");
       const recognition = new SpeechRecognition();
       recognition.lang = 'en-US';
       micBtn.style.background = '#ff0055';
 
       recognition.onresult = function(event) {{
-        const spokenText = event.results[0][0].transcript;
-        destInput.value = spokenText;
+        destInput.value = event.results[0][0].transcript;
         micBtn.style.background = 'rgba(0,219,222,0.2)';
-        updateDestination();
+        startInAppRoute();
       }};
       recognition.onerror = function() {{ micBtn.style.background = 'rgba(0,219,222,0.2)'; }};
       recognition.start();
     }}
 
-    destInput.addEventListener("keyup", function(event) {{
-      if (event.key === "Enter") updateDestination();
+    destInput.addEventListener("keyup", function(e) {{
+      if (e.key === "Enter") startInAppRoute();
     }});
 
     if (ADAS_ACTIVE) {{
-      cocoSsd.load().then(m => {{ cocoModel = m; }});
+      cocoSsd.load({{ base: 'lite_mobilenet_v2' }}).then(m => {{ cocoModel = m; }});
     }}
 
     async function initHUD() {{
       try {{
-        const constraints = {{ video: {{ facingMode: {{ ideal: "environment" }} }} }};
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const stream = await navigator.mediaDevices.getUserMedia({{
+          video: {{ facingMode: {{ ideal: "environment" }}, width: 480, height: 360 }}
+        }});
         video.srcObject = stream;
         await video.play();
 
@@ -282,18 +268,84 @@ HUD_CODE = f"""
         }}
 
         document.getElementById('startOverlay').style.display = 'none';
-        
-        const resizeCanvas = () => {{
-          canvas.width = canvas.clientWidth || 300;
-          canvas.height = canvas.clientHeight || 300;
-        }};
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-        
+        canvas.width = 480;
+        canvas.height = 360;
         renderHUD();
       }} catch(err) {{
         alert("Camera permission required!");
       }}
+    }}
+
+    // DYNAMIC WHITE LANE DETECTION ALGORITHM (BOTH CONTINUOUS & DASHED)
+    function detectWhiteLanesAndDrawBlue(w, h) {{
+      const imgData = ctx.getImageData(0, Math.floor(h * 0.55), w, Math.floor(h * 0.45));
+      const data = imgData.data;
+      
+      let leftLanePoints = [];
+      let rightLanePoints = [];
+      const stepY = 12; // Sample every 12th row
+      const halfW = w / 2;
+
+      for (let y = 0; y < imgData.height; y += stepY) {{
+        let screenY = Math.floor(h * 0.55) + y;
+        
+        // Scan Left Side for High Brightness (White Lane Pixels)
+        for (let x = 20; x < halfW - 20; x += 4) {{
+          let i = (y * w + x) * 4;
+          let r = data[i], g = data[i+1], b = data[i+2];
+          // Threshold for detecting white road marking pixels
+          if (r > 175 && g > 175 && b > 175) {{
+            leftLanePoints.push({{ x: x, y: screenY }});
+            break;
+          }}
+        }}
+
+        // Scan Right Side for High Brightness (White Lane Pixels)
+        for (let x = w - 20; x > halfW + 20; x -= 4) {{
+          let i = (y * w + x) * 4;
+          let r = data[i], g = data[i+1], b = data[i+2];
+          if (r > 175 && g > 175 && b > 175) {{
+            rightLanePoints.push({{ x: x, y: screenY }});
+            break;
+          }}
+        }}
+      }}
+
+      ctx.save();
+      ctx.strokeStyle = "#00d2ff"; // NEON BLUE
+      ctx.lineWidth = 5;
+      ctx.shadowColor = "#00d2ff";
+      ctx.shadowBlur = 10;
+
+      // Draw Left Lane (Works for both solid & dashed)
+      if (leftLanePoints.length > 1) {{
+        ctx.beginPath();
+        ctx.moveTo(leftLanePoints[0].x, leftLanePoints[0].y);
+        for (let p of leftLanePoints) ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }} else {{
+        // Fallback default left boundary if road is poorly lit
+        ctx.beginPath();
+        ctx.moveTo(w * 0.15, h);
+        ctx.lineTo(w * 0.42, h * 0.58);
+        ctx.stroke();
+      }}
+
+      // Draw Right Lane (Works for both solid & dashed)
+      if (rightLanePoints.length > 1) {{
+        ctx.beginPath();
+        ctx.moveTo(rightLanePoints[0].x, rightLanePoints[0].y);
+        for (let p of rightLanePoints) ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }} else {{
+        // Fallback default right boundary if road is poorly lit
+        ctx.beginPath();
+        ctx.moveTo(w * 0.85, h);
+        ctx.lineTo(w * 0.58, h * 0.58);
+        ctx.stroke();
+      }}
+
+      ctx.restore();
     }}
 
     async function renderHUD() {{
@@ -302,38 +354,25 @@ HUD_CODE = f"""
         const w = canvas.width;
         const h = canvas.height;
 
-        let detectedAlert = false;
-        if (ADAS_ACTIVE && cocoModel && frameCounter % 5 === 0) {{
-          const predictions = await cocoModel.detect(video);
-          predictions.forEach(pred => {{
-            let [bx, by, bw, bh] = pred.bbox;
-            let scaleX = w / video.videoWidth;
-            let scaleY = h / video.videoHeight;
-            let rx = bx * scaleX, ry = by * scaleY, rw = bw * scaleX, rh = bh * scaleY;
+        // DYNAMIC WHITE LANE DETECTION
+        detectWhiteLanesAndDrawBlue(w, h);
 
-            if (['car', 'truck', 'bus', 'motorbike'].includes(pred.class)) {{
-              let isClose = rw > (w * 0.45);
-              ctx.strokeStyle = isClose ? '#ff0037' : '#00ffcc';
-              ctx.lineWidth = 3;
-              ctx.strokeRect(rx, ry, rw, rh);
-              if (isClose) detectedAlert = true;
-            }}
-          }});
+        // THROTTLED ADAS DETECTION (Runs smoothly every 10 frames)
+        if (ADAS_ACTIVE && cocoModel && !isDetecting && frameCounter % 10 === 0) {{
+          isDetecting = true;
+          cocoModel.detect(video).then(predictions => {{
+            let alertTriggered = false;
+            predictions.forEach(pred => {{
+              if (['car', 'truck', 'bus', 'motorbike'].includes(pred.class)) {{
+                let [bx, by, bw, bh] = pred.bbox;
+                if (bw > (w * 0.4)) alertTriggered = true;
+              }}
+            }});
+            adasAlert.style.display = alertTriggered ? 'block' : 'none';
+            isDetecting = false;
+          }}).catch(() => {{ isDetecting = false; }});
         }}
         frameCounter++;
-
-        adasAlert.style.display = detectedAlert ? 'block' : 'none';
-
-        ctx.save();
-        ctx.strokeStyle = "rgba(0, 255, 136, 0.85)";
-        ctx.lineWidth = 6;
-        ctx.shadowColor = "#00ff88";
-        ctx.shadowBlur = 8;
-        ctx.beginPath();
-        ctx.moveTo(w * 0.5, h * 0.95);
-        ctx.quadraticCurveTo(w * 0.5, h * 0.65, w * 0.55, h * 0.45);
-        ctx.stroke();
-        ctx.restore();
       }}
 
       requestAnimationFrame(renderHUD);
